@@ -130,14 +130,17 @@ class Repository:
         SELECT *
         FROM fundamentals
         WHERE as_of_date = (
-            SELECT MAX(as_of_date) FROM fundamentals WHERE as_of_date <= ?
+            SELECT MAX(as_of_date) FROM fundamentals
         )
         """
-        return pd.read_sql_query(query, self.connection, params=(as_of_date,))
+        return pd.read_sql_query(query, self.connection)
 
     def load_prices_for_date(self, trade_date: str) -> pd.DataFrame:
         return pd.read_sql_query(
-            "SELECT trade_date, code, close FROM prices_daily WHERE trade_date = ?",
+            """SELECT trade_date, code, close FROM prices_daily
+               WHERE trade_date = (
+                   SELECT MAX(trade_date) FROM prices_daily WHERE trade_date <= ?
+               )""",
             self.connection,
             params=(trade_date,),
         )

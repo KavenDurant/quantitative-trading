@@ -1,3 +1,22 @@
 # Quantitative Trading
 
-A starter project for quantitative stock trading research and development.
+A 股基本面量化交易 MVP。
+
+## 第一阶段目标
+
+- 仅做沪深主板股票池
+- 基于质量、估值、预期三类因子打分
+- 月度调仓，最多持有 5 只股票
+- 先跑本地模拟盘，再接外部执行链路
+- 使用 SQLite 落库，Streamlit 展示结果
+
+## 快速开始
+
+1. 创建虚拟环境并安装依赖
+2. 复制 `.env.example` 为 `.env`
+3. 初始化数据库
+4. 回填示例数据
+5. 运行月度调仓
+6. 启动看板
+
+后续会补充具体命令。

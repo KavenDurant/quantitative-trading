@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "quantitative-trading"
+version = "0.1.0"
+description = "A-share fundamental quantitative trading MVP"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "akshare>=1.16.80",
+  "baostock>=0.8.9",
+  "numpy>=2.0.0",
+  "pandas>=2.2.0",
+  "pydantic>=2.8.0",
+  "pyyaml>=6.0.1",
+  "streamlit>=1.44.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3.0",
+  "ruff>=0.11.0",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]

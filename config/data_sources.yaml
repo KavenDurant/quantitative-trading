@@ -1,5 +1,5 @@
 data_sources:
-  primary: akshare
+  primary: baostock
   fallback: mock
   supported:
     - mock
