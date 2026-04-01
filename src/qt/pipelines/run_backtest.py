@@ -71,7 +71,7 @@ def run_backtest(
             scored = build_composite_scores(frame, weights)
             selected = select_top_candidates(scored, positions_limit)
             targets = assign_target_shares(selected, broker.cash(), config.lot_size, config.cash_buffer_pct)
-            signals = build_rebalance_signals(targets, broker.positions())
+            signals = build_rebalance_signals(targets, broker.positions(), price_map)
             trades = OrderManager(broker).execute(trade_date, signals)
             nav = compute_nav(broker.cash(), broker.positions(), price_map)
             nav_rows.append((trade_date, nav))

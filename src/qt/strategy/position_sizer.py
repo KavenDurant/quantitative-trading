@@ -20,7 +20,8 @@ def assign_target_shares(
 
     investable_cash = total_cash * (1 - cash_buffer_pct)
     n = len(sized)
-    target_weight = min(1 / n, max_single_position_weight)
+    equal_weight = 1 / n
+    target_weight = equal_weight if n == 1 else min(equal_weight, max_single_position_weight)
     sized["target_weight"] = target_weight
     sized["target_shares"] = sized["last_price"].apply(
         lambda price: max(math.floor((investable_cash * target_weight) / price / lot_size) * lot_size, 0)
