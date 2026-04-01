@@ -1,0 +1,5 @@
+schedule:
+  daily_checks: "0 18 * * 1-5"
+  monthly_rebalance: "31 9 1 * *"
+  monitor_interval_minutes: 5
+  close_review_time: "15:10"

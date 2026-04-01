@@ -1,0 +1,43 @@
+data_sources:
+  primary: akshare
+  fallback: mock
+  supported:
+    - mock
+    - akshare
+    - baostock
+  api:
+    gm_token_env: GM_API_TOKEN
+    gm_account_id_env: GM_ACCOUNT_ID
+    joinquant_username_env: JOINQUANT_USERNAME
+    joinquant_password_env: JOINQUANT_PASSWORD
+    eastmoney_cookie_env: EASTMONEY_COOKIE
+    serverchan_sendkey_env: SERVERCHAN_SENDKEY
+  universe:
+    exchanges:
+      - SH
+      - SZ
+    include_boards:
+      - main
+    exclude_prefixes:
+      - "300"
+      - "688"
+      - "8"
+      - "4"
+  paths:
+    db: .data/quant_trading.db
+    logs_dir: logs
+    output_dir: output
+    notebooks_dir: notebooks
+  tables:
+    instrument_master: instrument_master
+    fundamentals: fundamentals
+    prices_daily: prices_daily
+    composite_scores: composite_scores
+    rebalance_signals: rebalance_signals
+    orders: orders
+    positions: positions
+    portfolio_state: portfolio_state
+    backtest_runs: backtest_runs
+    backtest_nav: backtest_nav
+    backtest_positions: backtest_positions
+    backtest_trades: backtest_trades

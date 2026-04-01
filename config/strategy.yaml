@@ -1,0 +1,42 @@
+strategy:
+  initial_cash: 10000
+  max_positions: 5
+  lot_size: 100
+  min_listing_days: 365
+  min_price: 5.0
+  max_price: 50.0
+  min_daily_turnover: 30000000
+  cash_buffer_pct: 0.02
+  commission_rate: 0.0003
+  slippage_rate: 0.0005
+  stop_loss_pct: -0.08
+  take_profit_1_pct: 0.15
+  take_profit_2_pct: 0.25
+  holding_period_days: 120
+  monthly_portfolio_stop_loss_pct: -0.12
+  max_single_position_weight: 0.2
+  rebalance_frequency: monthly
+  rebalance_day: month_end
+  rebalance_time: "09:31"
+  monitor_interval_minutes: 5
+  close_check_time: "15:10"
+  data_as_of: 2025-12-31
+  backtest_start: 2025-01-01
+  backtest_end: 2025-12-31
+  benchmark: 000300.SH
+  factor_weights:
+    quality: 0.4
+    value: 0.35
+    expectation: 0.25
+  factor_columns:
+    quality:
+      - roe
+      - gross_margin
+      - operating_cashflow_ratio
+    value:
+      - pe_ttm
+      - pb
+      - ps_ttm
+    expectation:
+      - net_profit_yoy
+      - revenue_yoy
