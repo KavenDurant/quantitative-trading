@@ -17,6 +17,7 @@ from qt.strategy.position_sizer import build_position_table
 from qt.strategy.rebalancer import build_rebalance_signals
 from qt.strategy.risk_controls import (
     check_holding_period,
+    check_market_trend,
     check_portfolio_stop_loss,
     check_single_position_weight,
     check_stop_loss,
@@ -43,6 +44,40 @@ class TradingEngine:
         if fundamentals.empty or prices.empty:
             logger.warning("数据不足，跳过调仓")
             return
+
+        if self.config.market_timing_enabled:
+            long_window = max(self.config.market_timing_long_window, 1)
+            benchmark_code = self.config.benchmark.split(".")[0]
+            benchmark_window = self.repository.load_recent_prices(benchmark_code, as_of_date, long_window)
+            if len(benchmark_window) < long_window:
+                logger.warning(
+                    "基准指数数据不足，使用全市场均价作为大盘趋势代理 benchmark=%s points=%d",
+                    self.config.benchmark,
+                    len(benchmark_window),
+                )
+                market_prices = self.repository.load_market_proxy_prices(as_of_date, long_window)
+            else:
+                market_prices = benchmark_window["close"].tolist()
+
+            market_prices = [float(p) for p in market_prices]
+            if len(market_prices) < long_window:
+                logger.warning(
+                    "大盘趋势代理数据不足，跳过本次调仓 date=%s required=%d actual=%d",
+                    as_of_date,
+                    long_window,
+                    len(market_prices),
+                )
+                return
+
+            market_trend_ok = check_market_trend(
+                market_prices,
+                short_window=self.config.market_timing_short_window,
+                long_window=long_window,
+            )
+            if not market_trend_ok:
+                logger.warning("大盘趋势不满足开仓条件，跳过本次调仓 date=%s benchmark=%s", as_of_date, self.config.benchmark)
+                self.notifier.send_risk_alert("大盘趋势择时", f"{as_of_date} 大盘趋势不满足开仓条件，本次月度调仓跳过")
+                return
 
         frame = fundamentals.merge(prices[["code", "close"]], on="code", how="inner")
         frame = frame.rename(columns={"close": "last_price"})

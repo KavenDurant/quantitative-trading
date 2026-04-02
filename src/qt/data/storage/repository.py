@@ -145,6 +145,42 @@ class Repository:
             params=(trade_date,),
         )
 
+    def load_recent_prices(self, code: str, end_date: str, window: int) -> pd.DataFrame:
+        return pd.read_sql_query(
+            """
+            SELECT trade_date, code, close
+            FROM prices_daily
+            WHERE code = ? AND trade_date <= ?
+            ORDER BY trade_date DESC
+            LIMIT ?
+            """,
+            self.connection,
+            params=(code, end_date, window),
+        ).sort_values("trade_date")
+
+    def load_market_proxy_prices(self, end_date: str, window: int) -> list[float]:
+        if window <= 0:
+            return []
+        frame = pd.read_sql_query(
+            """
+            SELECT close
+            FROM (
+                SELECT trade_date, AVG(close) AS close
+                FROM prices_daily
+                WHERE trade_date <= ?
+                GROUP BY trade_date
+                ORDER BY trade_date DESC
+                LIMIT ?
+            ) t
+            ORDER BY trade_date ASC
+            """,
+            self.connection,
+            params=(end_date, window),
+        )
+        if frame.empty:
+            return []
+        return [float(v) for v in frame["close"].tolist()]
+
     def save_backtest_run(self, run_id: str, provider: str, start_date: str, end_date: str) -> None:
         self.connection.execute(
             "INSERT OR REPLACE INTO backtest_runs (run_id, provider, start_date, end_date, created_at) VALUES (?, ?, ?, ?, ?)",
@@ -186,6 +222,33 @@ class Repository:
         ORDER BY n.trade_date
         """
         return pd.read_sql_query(query, self.connection)
+
+    def load_recent_backtest_run_ids(self, limit: int = 2) -> list[str]:
+        frame = pd.read_sql_query(
+            """
+            SELECT run_id
+            FROM backtest_runs
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            self.connection,
+            params=(limit,),
+        )
+        if frame.empty:
+            return []
+        return [str(v) for v in frame["run_id"].tolist()]
+
+    def load_backtest_nav_by_run(self, run_id: str) -> pd.DataFrame:
+        return pd.read_sql_query(
+            """
+            SELECT run_id, trade_date, cash, nav
+            FROM backtest_nav
+            WHERE run_id = ?
+            ORDER BY trade_date
+            """,
+            self.connection,
+            params=(run_id,),
+        )
 
     def load_latest_backtest_positions(self) -> pd.DataFrame:
         query = """

@@ -42,3 +42,19 @@ def check_single_position_weight(
     if total_nav <= 0:
         return False
     return position_value / total_nav > max_weight
+
+
+def check_market_trend(
+    prices: list[float],
+    short_window: int = 20,
+    long_window: int = 60,
+) -> bool:
+    if long_window <= 0 or short_window <= 0 or short_window > long_window:
+        return False
+    if len(prices) < long_window:
+        return False
+
+    latest = prices[-1]
+    short_ma = sum(prices[-short_window:]) / short_window
+    long_ma = sum(prices[-long_window:]) / long_window
+    return latest >= long_ma and short_ma >= long_ma

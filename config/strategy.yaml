@@ -15,6 +15,9 @@ strategy:
   holding_period_days: 120
   monthly_portfolio_stop_loss_pct: -0.12
   max_single_position_weight: 0.2
+  market_timing_enabled: false
+  market_timing_short_window: 20
+  market_timing_long_window: 60
   rebalance_frequency: monthly
   rebalance_day: month_end
   rebalance_time: "09:31"

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -21,6 +22,12 @@ from qt.execution.paper_broker import PaperBroker
 from qt.factors.combiner import build_composite_scores, select_stocks
 from qt.factors.normalize import winsorize, check_no_future_leak
 from qt.monitoring.notifier import Notifier
+from qt.pipelines.run_daily_checks import (
+    _build_analyst_expectations_from_fundamentals,
+    _build_earnings_surprises_from_fundamentals,
+    _build_valuation_snapshots_from_fundamentals,
+)
+from qt.pipelines.run_scheduler import _matches_cron
 from qt.strategy.position_sizer import build_position_table
 from qt.strategy.risk_controls import (
     check_holding_period, check_portfolio_stop_loss,
@@ -130,6 +137,31 @@ def test_factors():
     assert len(result) == 2
     assert "composite_score" in result.columns
     print("PASS: factors")
+
+
+def test_daily_refresh_dataset_builders():
+    as_of_date = "2026-04-01"
+    fundamentals = [
+        FundamentalSnapshot(as_of_date, "600036", 0.15, 0.4, 0.7, 6.0, 1.1, 2.3, 0.12, 0.08),
+        FundamentalSnapshot(as_of_date, "000651", 0.2, 0.3, 0.6, 9.0, 1.8, 1.5, -0.05, 0.02),
+    ]
+
+    valuations = _build_valuation_snapshots_from_fundamentals(fundamentals, as_of_date)
+    expectations = _build_analyst_expectations_from_fundamentals(fundamentals, as_of_date)
+    surprises = _build_earnings_surprises_from_fundamentals(fundamentals, as_of_date)
+
+    assert len(valuations) == 2
+    assert len(expectations) == 2
+    assert len(surprises) == 2
+    assert valuations[0].code == "600036"
+    assert expectations[0].as_of_date == as_of_date
+    assert surprises[1].announce_date == as_of_date
+
+
+def test_scheduler_cron_matching():
+    assert _matches_cron("0 18 * * 1-5", datetime(2026, 4, 1, 18, 0)) is True  # Wed
+    assert _matches_cron("0 18 * * 1-5", datetime(2026, 4, 4, 18, 0)) is False  # Sat
+    assert _matches_cron("31 9 1 * *", datetime(2026, 4, 1, 9, 31)) is True
 
 
 def main():

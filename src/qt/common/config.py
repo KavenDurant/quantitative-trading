@@ -25,6 +25,9 @@ class AppConfig:
     holding_period_days: int
     monthly_portfolio_stop_loss_pct: float
     max_single_position_weight: float
+    market_timing_enabled: bool
+    market_timing_short_window: int
+    market_timing_long_window: int
     rebalance_frequency: str
     rebalance_day: str
     backtest_start: str
@@ -37,6 +40,14 @@ class AppConfig:
     fallback_provider: str
     data_as_of: str
     exclude_prefixes: list[str]
+
+
+@dataclass(slots=True)
+class ScheduleConfig:
+    daily_checks: str
+    monthly_rebalance: str
+    monitor_interval_minutes: int
+    close_review_time: str
 
 
 def _read_yaml(path: Path) -> dict[str, Any]:
@@ -65,6 +76,9 @@ def load_app_config(project_root: Path) -> AppConfig:
         holding_period_days=int(strategy_cfg.get("holding_period_days", 120)),
         monthly_portfolio_stop_loss_pct=float(strategy_cfg.get("monthly_portfolio_stop_loss_pct", -0.12)),
         max_single_position_weight=float(strategy_cfg.get("max_single_position_weight", 0.2)),
+        market_timing_enabled=bool(strategy_cfg.get("market_timing_enabled", False)),
+        market_timing_short_window=int(strategy_cfg.get("market_timing_short_window", 20)),
+        market_timing_long_window=int(strategy_cfg.get("market_timing_long_window", 60)),
         rebalance_frequency=str(strategy_cfg.get("rebalance_frequency", "monthly")),
         rebalance_day=str(strategy_cfg.get("rebalance_day", "month_end")),
         backtest_start=str(strategy_cfg.get("backtest_start", "2025-01-01")),
@@ -77,4 +91,14 @@ def load_app_config(project_root: Path) -> AppConfig:
         fallback_provider=str(data_cfg.get("fallback", "mock")),
         data_as_of=str(strategy_cfg.get("data_as_of", "2025-12-31")),
         exclude_prefixes=list(data_cfg.get("universe", {}).get("exclude_prefixes", [])),
+    )
+
+
+def load_schedule_config(project_root: Path) -> ScheduleConfig:
+    schedule_cfg = _read_yaml(project_root / "config" / "schedule.yaml").get("schedule", {})
+    return ScheduleConfig(
+        daily_checks=str(schedule_cfg.get("daily_checks", "0 18 * * 1-5")),
+        monthly_rebalance=str(schedule_cfg.get("monthly_rebalance", "31 9 1 * *")),
+        monitor_interval_minutes=int(schedule_cfg.get("monitor_interval_minutes", 5)),
+        close_review_time=str(schedule_cfg.get("close_review_time", "15:10")),
     )

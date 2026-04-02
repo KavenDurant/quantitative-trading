@@ -8,6 +8,7 @@ from qt.common.logger import get_logger
 from qt.data.ingest.universe_builder import filter_by_liquidity, filter_by_price, listing_days
 from qt.strategy.risk_controls import (
     check_holding_period,
+    check_market_trend,
     check_portfolio_stop_loss,
     check_single_position_weight,
     check_stop_loss,
@@ -39,6 +40,9 @@ class RiskManager:
         min_daily_turnover: float = 30_000_000,
         min_listing_days: int = 365,
         blacklist: set[str] | None = None,
+        market_timing_enabled: bool = False,
+        market_timing_short_window: int = 20,
+        market_timing_long_window: int = 60,
     ) -> None:
         self.stop_loss_pct = stop_loss_pct
         self.take_profit_1_pct = take_profit_1_pct
@@ -51,6 +55,9 @@ class RiskManager:
         self.min_daily_turnover = min_daily_turnover
         self.min_listing_days = min_listing_days
         self.blacklist = blacklist or set()
+        self.market_timing_enabled = market_timing_enabled
+        self.market_timing_short_window = market_timing_short_window
+        self.market_timing_long_window = market_timing_long_window
 
     def pre_trade_filter(
         self,
@@ -85,6 +92,26 @@ class RiskManager:
         if "is_st" in filtered.columns:
             filtered = filtered[filtered["is_st"] == 0]
         filtered = filtered[~filtered["code"].isin(self.blacklist)]
+
+        # 大盘趋势择时（可选）
+        if self.market_timing_enabled and "benchmark_prices" in filtered.columns and not filtered.empty:
+            benchmark_series = [
+                float(value)
+                for value in filtered["benchmark_prices"].iloc[0]
+                if value is not None
+            ]
+            trend_ok = check_market_trend(
+                benchmark_series,
+                short_window=self.market_timing_short_window,
+                long_window=self.market_timing_long_window,
+            )
+            if not trend_ok:
+                logger.warning(
+                    "大盘趋势未通过 short_window=%s long_window=%s，跳过本轮选股",
+                    self.market_timing_short_window,
+                    self.market_timing_long_window,
+                )
+                return filtered.iloc[0:0].reset_index(drop=True)
 
         logger.info("风控前置过滤: %d -> %d", len(candidates), len(filtered))
         return filtered.reset_index(drop=True)

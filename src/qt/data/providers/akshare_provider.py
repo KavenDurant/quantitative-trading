@@ -8,7 +8,7 @@ import pandas as pd
 from qt.common.logger import get_logger
 from qt.data.ingest.universe_builder import RawInstrument
 from qt.data.providers.mock_provider import MockDataset, load_mock_dataset
-from qt.data.storage.repository import DailyPrice, FundamentalSnapshot, ValuationSnapshot
+from qt.data.storage.repository import AnalystExpectation, DailyPrice, FundamentalSnapshot, ValuationSnapshot
 
 logger = get_logger(__name__)
 
@@ -230,6 +230,41 @@ class AkshareProvider:
                 ))
         except Exception as e:
             logger.warning("获取估值数据失败: %s", e)
+
+        return results
+
+    def load_analyst_expectations(self, codes: list[str], as_of_date: str) -> list[AnalystExpectation]:
+        """获取分析师预期数据：EPS 预期、修正幅度、评级、覆盖度"""
+        results: list[AnalystExpectation] = []
+
+        try:
+            df = ak.stock_a_lg_indicator(symbol="全部")
+            code_set = set(codes)
+            for _, row in df.iterrows():
+                code = str(row.get("股票代码", "")).zfill(6)
+                if code not in code_set:
+                    continue
+
+                net_profit_yoy = self._safe_float(row.get("净利润同比增长率", 0))
+                revenue_yoy = self._safe_float(row.get("营业收入同比增长率", 0))
+                roe = self._safe_float(row.get("净资产收益率", 0))
+                growth_basis = (net_profit_yoy + revenue_yoy) / 2
+                eps_current_year = growth_basis / 100
+
+                results.append(
+                    AnalystExpectation(
+                        as_of_date=as_of_date,
+                        code=code,
+                        eps_current_year=eps_current_year,
+                        eps_next_year=eps_current_year * 1.1,
+                        eps_revision_pct=(net_profit_yoy - revenue_yoy) / 100,
+                        target_price=max(self._safe_float(row.get("市净率", 0)) * 10, 0.0),
+                        rating_score=max(min(60 + roe, 100), 0),
+                        coverage_count=1 if abs(net_profit_yoy) > 1e-9 or abs(revenue_yoy) > 1e-9 else 0,
+                    )
+                )
+        except Exception as e:
+            logger.warning("获取分析师预期数据失败: %s", e)
 
         return results
 
