@@ -1,123 +1,61 @@
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any
+from dataclasses import dataclass
 
-import numpy as np
 import pandas as pd
-from scipy import stats
-from sklearn.ensemble import HistGradientBoostingRegressor
 
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_squared_error,from sklearn.metrics import mean_absolute_error
-from sklearn.metrics import precision_score,from sklearn.metrics import recall_score
-from sklearn.metrics import f1_score
+from qt.common.logger import get_logger
+from qt.factors.ml_composer import MLFactorComposer, build_ml_composite_scores
 
-from sklearn.preprocessing import StandardScaler
-from sklearn.pipeline import Pipeline
-from sklearn.model_selection import GridSearchCV
-from sklearn.utils import check_Xjson_fields, check_Xjson_or check_array_equals
-from sklearn.utils.multiclass import unique_label_encoder
-from sklearn.feature_extraction.text import CountVectorizer
-from sklearn.feature_extraction import DictVectorizer
-from sklearn.compose import ColumnTransformer
-from sklearn.impute import SimpleImputer
-
-from sklearn.pipeline import FunctionTransformer
-
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import RobustScaler
-from sklearn.model_selection import SelectFromModel
-from sklearn.neighbors import LocalOutlierFactor
-from sklearn.feature_selection import mutual_info_regression
-from sklearn.feature_selection import SelectFwe
-from sklearn.feature_selection import SelectKBest
-from sklearn.metrics import accuracy_score,from sklearn.metrics import precision_score
-from sklearn.metrics import recall_score
-from sklearn.metrics import f1_score
-from sklearn.metrics import classification_report
-from sklearn.metrics import r2_score
-from sklearn.preprocessing import MinMaxScaler,from sklearn.preprocessing import MaxAbsScaler
-from sklearn.feature_extraction import TfidfVectorizer
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.utils import check_array, check_isinstance
-from sklearn.utils.multiclass import unique_label_encoder
+logger = get_logger(__name__)
 
 
-from sklearn.impute import SimpleImputer
-from sklearn.pipeline import Pipeline
-from sklearn.compose import ColumnTransformer
-from sklearn.feature_extraction.text import CountVectorizer
-from sklearn.feature_extraction import DictVectorizer
-from sklearn.impute import SimpleImputer
-from sklearn.impute import KNNImputer
-from sklearn.preprocessing import StandardScaler
-from sklearn.preprocessing import MinMaxScaler
-from sklearn.preprocessing import RobustScaler
-from sklearn.model_selection import SelectFromModel
-from sklearn.model_selection import train_test_split
-from sklearn.model_selection import GridSearchCV
-from sklearn.model_selection import SelectKBest
-from sklearn.metrics import accuracy_score
-from sklearn.metrics import precision_score
-from sklearn.metrics import recall_score
-from sklearn.metrics import f1_score
-from sklearn.metrics import classification_report
-from sklearn.metrics import r2_score
-from sklearn.pipeline import Pipeline
-from sklearn.compose import ColumnTransformer
-from sklearn.feature_extraction import TfidfVectorizer
-from sklearn.feature_extraction import DictVectorizer
-from sklearn.impute import SimpleImputer
-from sklearn.impute import KNNImputer
-from sklearn.preprocessing import StandardScaler
-from sklearn.preprocessing import MinMaxScaler
-from sklearn.preprocessing import RobustScaler
-from sklearn.model_selection import SelectFromModel
-from sklearn.model_selection import train_test_split
-from sklearn.model_selection import SelectKBest
-from sklearn.metrics import accuracy_score
-from sklearn.metrics import precision_score
-from sklearn.metrics import recall_score
-from sklearn.metrics import f1_score
-from sklearn.metrics import classification_report
-from sklearn.metrics import r2_score
-from sklearn.pipeline import Pipeline
-from sklearn.compose import ColumnTransformer
-from sklearn.feature_extraction.text import CountVectorizer
-from sklearn.feature_extraction import DictVectorizer
-from sklearn.impute import SimpleImputer
-from sklearn.impute import KNNImputer
-from sklearn.preprocessing import StandardScaler
-from sklearn.preprocessing import MinMaxScaler
-from sklearn.preprocessing import RobustScaler
-from sklearn.model_selection import SelectFromModel
-from sklearn.model_selection import train_test_split
-from sklearn.model_selection import SelectKBest
-from sklearn.metrics import accuracy_score
-from sklearn.metrics import precision_score
-from sklearn.metrics import recall_score
-from sklearn.metrics import f1_score
-from sklearn.metrics import classification_report
-from sklearn.metrics import r2_score
-from sklearn.feature_extraction import TfidfVectorizer
-from sklearn.feature_extraction import DictVectorizer
-from sklearn.feature_extraction.text import CountVectorizer
-from sklearn.impute import SimpleImputer
-from sklearn.impute import KNNImputer
-from sklearn.preprocessing import StandardScaler
-from sklearn.preprocessing import MinMaxScaler
-from sklearn.preprocessing import RobustScaler
-from sklearn.model_selection import SelectFromModel
-from sklearn.model_selection import train_test_split
-from sklearn.model_selection import SelectKBest
-from sklearn.metrics import accuracy_score
-from sklearn.metrics import precision_score
-from sklearn.metrics import recall_score
-from sklearn.metrics import f1_score
-from sklearn.metrics import classification_report
-from sklearn.metrics import r2_score
-    ]
-}
+@dataclass(slots=True)
+class LGBMTrainingArtifacts:
+    feature_importance: dict[str, float]
+    model_type: str
+    trained_at: str
+    sample_count: int
+    feature_count: int
 
-}
+
+def train_lightgbm_model(
+    factor_history: pd.DataFrame,
+    forward_returns: pd.DataFrame,
+    n_splits: int = 5,
+    learning_rate: float = 0.05,
+    n_estimators: int = 100,
+    max_depth: int = 4,
+) -> tuple[MLFactorComposer, LGBMTrainingArtifacts]:
+    """训练 LightGBM 因子合成模型并返回训练产物。"""
+    composer = MLFactorComposer(
+        n_splits=n_splits,
+        learning_rate=learning_rate,
+        n_estimators=n_estimators,
+        max_depth=max_depth,
+    )
+    X, y = composer.prepare_training_data(factor_history, forward_returns)
+    composer.train(X, y)
+    artifacts = LGBMTrainingArtifacts(
+        feature_importance=composer.feature_importance,
+        model_type="LightGBM",
+        trained_at=pd.Timestamp.now().isoformat(),
+        sample_count=len(X),
+        feature_count=X.shape[1],
+    )
+    logger.info("LightGBM 模型训练完成 samples=%d features=%d", artifacts.sample_count, artifacts.feature_count)
+    return composer, artifacts
+
+
+def predict_lightgbm_scores(model: MLFactorComposer, frame: pd.DataFrame) -> pd.Series:
+    """使用已训练模型预测当前截面的 ML 分数。"""
+    return model.predict(frame)
+
+
+def build_lightgbm_scores(
+    frame: pd.DataFrame,
+    factor_history: pd.DataFrame | None = None,
+    forward_returns: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """兼容旧模块名的 LightGBM 合成入口。"""
+    return build_ml_composite_scores(frame, factor_history, forward_returns)

@@ -23,6 +23,22 @@ def _build_backtest_comparison_frame(repository: Repository) -> pd.DataFrame:
     return comparison.sort_values("trade_date").reset_index(drop=True)
 
 
+def _enrich_with_names(df: pd.DataFrame, name_map: dict[str, str]) -> pd.DataFrame:
+    """给 DataFrame 的 code 列旁边插入 name 列。"""
+    if df.empty or "code" not in df.columns:
+        return df
+    result = df.copy()
+    result["name"] = result["code"].map(name_map)
+    # 把 name 列移到 code 后面
+    cols = list(result.columns)
+    if "name" in cols:
+        cols.remove("name")
+        code_idx = cols.index("code") + 1
+        cols.insert(code_idx, "name")
+        result = result[cols]
+    return result
+
+
 def build_dashboard_data(project_root: Path) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, float | int | str]]:
     config = load_app_config(project_root)
     client = SQLiteClient(config.db_path)
@@ -32,6 +48,10 @@ def build_dashboard_data(project_root: Path) -> tuple[pd.DataFrame, pd.DataFrame
         positions = repository.load_latest_backtest_positions()
         trades = repository.load_latest_backtest_trades()
         comparison = _build_backtest_comparison_frame(repository)
+        name_map = repository.load_stock_name_map()
+
+    positions = _enrich_with_names(positions, name_map)
+    trades = _enrich_with_names(trades, name_map)
 
     latest_nav = float(nav.iloc[-1]["nav"]) if not nav.empty else 0.0
     latest_cash = float(nav.iloc[-1]["cash"]) if not nav.empty else 0.0

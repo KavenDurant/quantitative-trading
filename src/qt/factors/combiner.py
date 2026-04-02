@@ -5,16 +5,10 @@ from typing import Literal
 
 import pandas as pd
 
+from qt.factors.constants import DEFAULT_FACTOR_WEIGHTS
 from qt.factors.expectation import compute_expectation_score
 from qt.factors.quality import compute_quality_score
 from qt.factors.value import compute_value_score
-
-
-DEFAULT_WEIGHTS = {
-    "quality": 0.4,
-    "value": 0.35,
-    "expectation": 0.25,
-}
 
 
 def build_composite_scores(
@@ -28,7 +22,7 @@ def build_composite_scores(
         from qt.factors.ml_composer import build_ml_composite_scores as build_ml_scores
         return build_ml_scores(frame, factor_history, forward_returns)
 
-    effective_weights = weights or DEFAULT_WEIGHTS
+    effective_weights = weights or DEFAULT_FACTOR_WEIGHTS
     scored = frame.copy()
     scored["quality_score"] = compute_quality_score(scored)
     scored["value_score"] = compute_value_score(scored)

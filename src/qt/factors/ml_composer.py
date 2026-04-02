@@ -2,20 +2,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import TimeSeriesSplit
-from typing import TYPE_CHECKING
 
 from qt.common.logger import get_logger
+from qt.factors.constants import ML_FALLBACK_FACTOR_WEIGHTS
 
 if TYPE_CHECKING:
     import lightgbm as lgb
 
 logger = get_logger(__name__)
-
 
 FEATURE_COLS = ["quality_score", "value_score", "expectation_score"]
 
@@ -35,8 +34,8 @@ class MLFactorComposer:
         learning_rate: float = 0.05,
         n_estimators: int = 100,
         max_depth: int = 4,
-    ):
-        self.n_splits = n_splits
+    ) -> None:
+        self.n_splits = max(n_splits, 1)
         self.learning_rate = learning_rate
         self.n_estimators = n_estimators
         self.max_depth = max_depth
@@ -52,38 +51,42 @@ class MLFactorComposer:
         self,
         factor_history: pd.DataFrame,
         forward_returns: pd.DataFrame,
-        forward_days: int = 20,
     ) -> tuple[pd.DataFrame, pd.Series]:
-        """
-        准备训练数据
-        - X: 因子值
-        - y: 未来 N 日收益率
-        """
+        """准备 LightGBM 训练数据。"""
+        self._validate_features(factor_history)
+        if "trade_date" not in factor_history.columns:
+            raise ValueError("factor_history 缺少 trade_date 列")
+        if "code" not in factor_history.columns:
+            raise ValueError("factor_history 缺少 code 列")
+        if not {"trade_date", "code", "forward_return"}.issubset(forward_returns.columns):
+            raise ValueError("forward_returns 缺少必要列: trade_date / code / forward_return")
+
         merged = pd.merge(
-            factor_history[["trade_date"] + FEATURE_COLS],
-            forward_returns[["trade_date", "forward_return"]],
-            on="trade_date",
+            factor_history[["trade_date", "code", *FEATURE_COLS]],
+            forward_returns[["trade_date", "code", "forward_return"]],
+            on=["trade_date", "code"],
             how="inner",
         ).dropna()
 
+        if merged.empty:
+            raise ValueError("训练数据为空")
         if len(merged) < 50:
             logger.warning("训练样本量不足: %d", len(merged))
 
+        merged = merged.sort_values("trade_date").reset_index(drop=True)
         X = merged[FEATURE_COLS]
         y = merged["forward_return"]
-
         logger.info("准备训练数据: samples=%d features=%d", len(X), len(FEATURE_COLS))
         return X, y
 
-    def train(self, X: pd.DataFrame, y: pd.Series) -> None:
-        """训练 LightGBM 模型"""
+    def _build_model(self) -> "lgb.LGBMRegressor":
         try:
             import lightgbm as lgb
-        except ImportError:
+        except ImportError as exc:
             logger.error("LightGBM 未安装，请运行: pip install lightgbm")
-            raise
+            raise ImportError("LightGBM 未安装") from exc
 
-        self.model = lgb.LGBMRegressor(
+        return lgb.LGBMRegressor(
             learning_rate=self.learning_rate,
             n_estimators=self.n_estimators,
             max_depth=self.max_depth,
@@ -91,41 +94,52 @@ class MLFactorComposer:
             verbose=-1,
         )
 
-        tscv = TimeSeriesSplit(n_splits=self.n_splits)
-        cv_scores = []
+    def _resolve_n_splits(self, sample_count: int) -> int:
+        if sample_count < 3:
+            return 1
+        return min(self.n_splits, sample_count - 1)
 
-        for fold_idx, (train_idx, val_idx) in enumerate(tscv.split(X)):
-            X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
-            y_train, y_val = y.iloc[train_idx], y.iloc[val_idx]
+    def train(self, X: pd.DataFrame, y: pd.Series) -> None:
+        """训练 LightGBM 模型。"""
+        split_count = self._resolve_n_splits(len(X))
+        cv_scores: list[float] = []
 
-            self.model.fit(X_train, y_train, eval_set=[(X_val, y_val)], callbacks=[])
+        if split_count > 1:
+            tscv = TimeSeriesSplit(n_splits=split_count)
+            for fold_idx, (train_idx, val_idx) in enumerate(tscv.split(X), start=1):
+                fold_model = self._build_model()
+                X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
+                y_train, y_val = y.iloc[train_idx], y.iloc[val_idx]
+                fold_model.fit(X_train, y_train)
 
-            val_pred = self.model.predict(X_val)
-            val_ic = np.corrcoef(val_pred, y_val)[0, 1]
-            cv_scores.append(val_ic if not np.isnan(val_ic) else 0.0)
+                val_pred = fold_model.predict(X_val)
+                val_ic = np.corrcoef(val_pred, y_val)[0, 1]
+                score = 0.0 if np.isnan(val_ic) else float(val_ic)
+                cv_scores.append(score)
+                logger.info("Fold %d: IC=%.4f", fold_idx, score)
+        else:
+            logger.warning("样本量过少，跳过时间序列交叉验证 samples=%d", len(X))
 
-            logger.info("Fold %d: IC=%.4f", fold_idx + 1, val_ic)
+        self.model = self._build_model()
+        self.model.fit(X, y)
+        self.feature_importance = {
+            feature: float(importance)
+            for feature, importance in zip(FEATURE_COLS, self.model.feature_importances_)
+        }
 
-        mean_ic = np.mean(cv_scores)
-        std_ic = np.std(cv_scores)
-        logger.info("交叉验证完成: Mean IC=%.4f (±%.4f)", mean_ic, std_ic)
-
-        self.feature_importance = dict(zip(
-            FEATURE_COLS,
-            self.model.feature_importances_,
-        ))
+        if cv_scores:
+            mean_ic = float(np.mean(cv_scores))
+            std_ic = float(np.std(cv_scores))
+            logger.info("交叉验证完成: Mean IC=%.4f (±%.4f)", mean_ic, std_ic)
         logger.info("特征重要性: %s", self.feature_importance)
 
     def predict(self, frame: pd.DataFrame) -> pd.Series:
-        """预测因子合成分数"""
+        """预测因子合成分数。"""
         if self.model is None:
             raise RuntimeError("模型未训练，请先调用 train()")
 
         self._validate_features(frame)
-
-        X = frame[FEATURE_COLS].copy()
-        predictions = self.model.predict(X)
-
+        predictions = self.model.predict(frame[FEATURE_COLS])
         return pd.Series(predictions, index=frame.index, name="ml_composite_score")
 
     def fit_predict(
@@ -134,12 +148,10 @@ class MLFactorComposer:
         forward_returns: pd.DataFrame,
         current_frame: pd.DataFrame,
     ) -> MLModelResult:
-        """训练并预测当前截面"""
+        """训练并预测当前截面。"""
         X, y = self.prepare_training_data(factor_history, forward_returns)
         self.train(X, y)
-
         predictions = self.predict(current_frame)
-
         return MLModelResult(
             predictions=predictions,
             feature_importance=self.feature_importance,
@@ -148,60 +160,40 @@ class MLFactorComposer:
         )
 
 
+def _build_fallback_scores(frame: pd.DataFrame) -> pd.Series:
+    missing = [col for col in FEATURE_COLS if col not in frame.columns]
+    if missing:
+        raise ValueError(f"缺少特征列: {missing}")
+    score = sum(frame[col] * weight for col, weight in ML_FALLBACK_FACTOR_WEIGHTS.items())
+    return pd.Series(score, index=frame.index, name="ml_composite_score")
+
+
 def build_ml_composite_scores(
     frame: pd.DataFrame,
     factor_history: pd.DataFrame | None = None,
     forward_returns: pd.DataFrame | None = None,
     use_cross_validation: bool = True,
 ) -> pd.DataFrame:
-    """
-    使用 ML 模型合成因子分数
-
-    Args:
-        frame: 当前截面的因子数据
-        factor_history: 历史因子数据（用于训练）
-        forward_returns: 历史未来收益数据（用于训练）
-        use_cross_validation: 是否使用交叉验证训练
-
-    Returns:
-        包含 ml_composite_score 列的 DataFrame
-    """
+    """使用 ML 模型合成因子分数。"""
     result = frame.copy()
 
     if factor_history is None or forward_returns is None:
         logger.warning("缺少历史数据，回退到等权合成")
-        result["ml_composite_score"] = (
-            result.get("quality_score", 0) * 0.4
-            + result.get("value_score", 0) * 0.35
-            + result.get("expectation_score", 0) * 0.25
-        )
-        return result
+        result["ml_composite_score"] = _build_fallback_scores(result)
+        return result.sort_values("ml_composite_score", ascending=False).reset_index(drop=True)
 
     try:
-        composer = MLFactorComposer(
-            n_splits=5 if use_cross_validation else 1,
-            learning_rate=0.05,
-            n_estimators=100,
-            max_depth=4,
-        )
-
-        model_result = composer.fit_predict(factor_history, forward_returns, frame)
-
+        composer = MLFactorComposer(n_splits=5 if use_cross_validation else 1)
+        model_result = composer.fit_predict(factor_history, forward_returns, result)
         result["ml_composite_score"] = model_result.predictions
-
         logger.info(
             "ML 合成完成: importance=%s samples=%d",
             model_result.feature_importance,
             len(result),
         )
-
-    except Exception as exc:
+    except (ImportError, ValueError) as exc:
         logger.warning("ML 训练失败，回退到等权合成: %s", exc)
-        result["ml_composite_score"] = (
-            result.get("quality_score", 0) * 0.4
-            + result.get("value_score", 0) * 0.35
-            + result.get("expectation_score", 0) * 0.25
-        )
+        result["ml_composite_score"] = _build_fallback_scores(result)
 
     return result.sort_values("ml_composite_score", ascending=False).reset_index(drop=True)
 
@@ -212,7 +204,7 @@ def select_stocks_ml(
     factor_history: pd.DataFrame | None = None,
     forward_returns: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
-    """使用 ML 合成选择股票"""
+    """使用 ML 合成选择股票。"""
     scored = build_ml_composite_scores(frame, factor_history, forward_returns)
     result = scored.head(top_n)
     output_cols = ["code"]
@@ -221,4 +213,4 @@ def select_stocks_ml(
     output_cols += ["quality_score", "value_score", "expectation_score", "ml_composite_score"]
     if "close" in result.columns:
         output_cols.append("close")
-    return result[[c for c in output_cols if c in result.columns]]
+    return result[[column for column in output_cols if column in result.columns]]

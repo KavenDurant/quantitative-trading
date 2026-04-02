@@ -1,5 +1,6 @@
 """Factor layer."""
 
+from qt.factors.constants import DEFAULT_FACTOR_WEIGHTS, ML_FALLBACK_FACTOR_WEIGHTS
 from qt.factors.decay_detector import (
     DecayReport,
     DecayStatus,
@@ -15,6 +16,8 @@ from qt.factors.ml_composer import (
 )
 
 __all__ = [
+    "DEFAULT_FACTOR_WEIGHTS",
+    "ML_FALLBACK_FACTOR_WEIGHTS",
     "DecayReport",
     "DecayStatus",
     "detect_factor_decay",

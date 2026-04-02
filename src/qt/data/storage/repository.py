@@ -353,6 +353,13 @@ class Repository:
         )
         self.connection.commit()
 
+    def load_stock_name_map(self) -> dict[str, str]:
+        """返回 {code: name} 映射，用于看板显示中文名。"""
+        rows = self.connection.execute(
+            "SELECT code, name FROM instrument_master"
+        ).fetchall()
+        return {row["code"]: row["name"] for row in rows}
+
     def load_earnings_surprises(self, start_date: str, end_date: str) -> pd.DataFrame:
         return pd.read_sql_query(
             "SELECT * FROM earnings_surprise WHERE announce_date BETWEEN ? AND ? ORDER BY announce_date DESC",

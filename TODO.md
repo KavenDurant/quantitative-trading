@@ -44,9 +44,10 @@
 
 #### Step 3：安装所有依赖库
 - [x] 安装核心依赖库（项目已有 `pyproject.toml`）
-- [ ] 补充安装 matplotlib / plotly / scikit-learn / lightgbm / sqlalchemy / jupyter / backtrader / gm / schedule / requests / python-dotenv / loguru
-- [ ] 验证所有库安装成功
-- [ ] 验收：运行导入代码无报错
+- [x] 补充安装 matplotlib / plotly / scikit-learn / lightgbm / sqlalchemy / jupyter / backtrader / gm / schedule / requests / python-dotenv / loguru
+- [ ] 验证所有库安装成功（lightgbm / backtrader 已安装；gm 包名/分发源待确认，当前 pip 无可用发行版）
+
+- [ ] 验收：运行导入代码无报错（当前仅 `import gm` 失败，其他依赖导入通过）
 
 ### 1.2 创建项目文件夹结构
 - [x] 创建项目根目录
@@ -65,9 +66,9 @@
 - [x] 补充完善 `.gitignore`
 - [x] 创建 `.env.example`
 - [x] 创建本地 `.env`
-- [ ] 在 GitHub 创建私有仓库
-- [ ] 连接远程仓库并推送
-- [ ] 验收：GitHub 上可看到项目文件且 `.env` 未上传
+- [x] 在 GitHub 创建私有仓库（已存在 public 仓库 KavenDurant/quantitative-trading，如需改私有请手动操作）
+- [x] 连接远程仓库并推送（origin 已配置）
+- [x] 验收：GitHub 上可看到项目文件且 `.env` 未上传
 
 ### 1.4 编写全局配置文件
 - [x] 建立统一配置加载入口 `src/qt/common/config.py`
@@ -325,7 +326,8 @@
 ### 7.2 集成测试
 - [x] 编写集成测试脚本
 - [x] 测试数据库连通
-- [ ] 测试 AkShare 数据源（需网络环境）
+- [ ] 测试 AkShare 数据源（需网络环境，当前环境代理连接失败）
+
 - [x] 测试仓位计算
 - [x] 测试买卖价格计算
 - [x] 测试风控规则
@@ -426,7 +428,7 @@
 - [x] Streamlit 看板增加历史回测对比功能
 - [ ] 接入更多预警渠道（钉钉 / 企业微信）
 - [x] 开发因子有效性自动衰减检测
-- [x] 引入机器学习模型（LightGBM）替代等权合成
+- [x] 引入机器学习模型（LightGBM)替代等权合成
 
 ---
 
