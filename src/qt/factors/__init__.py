@@ -7,6 +7,12 @@ from qt.factors.decay_detector import (
     detect_factor_decay,
     format_report,
 )
+from qt.factors.ml_composer import (
+    MLFactorComposer,
+    MLModelResult,
+    build_ml_composite_scores,
+    select_stocks_ml,
+)
 
 __all__ = [
     "DecayReport",
@@ -14,4 +20,8 @@ __all__ = [
     "detect_factor_decay",
     "batch_detect_decay",
     "format_report",
+    "MLFactorComposer",
+    "MLModelResult",
+    "build_ml_composite_scores",
+    "select_stocks_ml",
 ]
