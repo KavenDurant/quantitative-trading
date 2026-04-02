@@ -135,6 +135,29 @@ class Repository:
         """
         return pd.read_sql_query(query, self.connection)
 
+    def load_fundamentals(self, as_of_date: str) -> pd.DataFrame:
+        return pd.read_sql_query(
+            "SELECT * FROM fundamentals WHERE as_of_date <= ? ORDER BY as_of_date DESC",
+            self.connection,
+            params=(as_of_date,),
+        )
+
+    def load_prices(self, as_of_date: str, lookback_days: int = 120) -> pd.DataFrame:
+        import pandas as pd
+
+        end = pd.Timestamp(as_of_date)
+        start = (end - pd.Timedelta(days=lookback_days)).strftime("%Y-%m-%d")
+        return pd.read_sql_query(
+            """
+            SELECT trade_date, code, close
+            FROM prices_daily
+            WHERE trade_date BETWEEN ? AND ?
+            ORDER BY trade_date, code
+            """,
+            self.connection,
+            params=(start, as_of_date),
+        )
+
     def load_prices_for_date(self, trade_date: str) -> pd.DataFrame:
         return pd.read_sql_query(
             """SELECT trade_date, code, close FROM prices_daily

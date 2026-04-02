@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
+import pandas as pd
+
 from qt.common.config import load_app_config
 from qt.common.logger import get_logger
 from qt.data.ingest.universe_builder import filter_universe
@@ -17,6 +19,7 @@ from qt.data.storage.repository import (
     ValuationSnapshot,
 )
 from qt.data.storage.sqlite_client import SQLiteClient
+from qt.factors.decay_detector import batch_detect_decay, DecayStatus
 
 logger = get_logger(__name__)
 
@@ -210,6 +213,9 @@ def main() -> None:
         checker.run_all()
         _log_daily_refresh_summary(connection, today)
 
+        # 8. 因子有效性衰减检测（可选：每周执行一次）
+        _run_factor_decay_check(repository, today)
+
     logger.info(
         "每日数据更新完成 date=%s instruments=%s prices=%s valuations=%s expectations=%s surprises=%s",
         today,
@@ -219,6 +225,112 @@ def main() -> None:
         len(analyst_expectations),
         len(earnings_surprises),
     )
+
+
+def _run_factor_decay_check(repository: Repository, as_of_date: str) -> None:
+    try:
+        from qt.factors import build_composite_scores
+
+        prices_df = repository.load_prices(as_of_date=as_of_date)
+        fundamentals_df = repository.load_fundamentals(as_of_date=as_of_date)
+
+        if prices_df.empty or fundamentals_df.empty:
+            logger.info("因子衰减检测跳过：价格或基本面数据为空")
+            return
+
+        factor_frame = build_composite_scores(
+            pd.merge(fundamentals_df, prices_df[["code", "close"]], on="code", how="inner"),
+        )
+
+        forward_returns_df = _build_forward_returns(repository, as_of_date, lookback_days=120)
+        if forward_returns_df.empty:
+            logger.info("因子衰减检测跳过：无法构建未来收益序列")
+            return
+
+        factor_history = _build_factor_history(repository, as_of_date, months=6)
+        if factor_history.empty:
+            logger.info("因子衰减检测跳过：历史因子数据不足")
+            return
+
+        factor_names = ["quality_score", "value_score", "expectation_score", "composite_score"]
+        reports = batch_detect_decay(
+            factor_names,
+            factor_history,
+            forward_returns_df,
+            lookback_months=6,
+        )
+
+        decayed = [r for r in reports if r.status in (DecayStatus.WARNING, DecayStatus.DECAYED)]
+        if decayed:
+            logger.warning("检测到因子衰减: %s", [r.factor_name for r in decayed])
+            for r in decayed:
+                logger.warning("因子 %s: %s", r.factor_name, r.message)
+        else:
+            logger.info("因子衰减检测通过: 所有因子表现健康")
+
+    except Exception as exc:
+        logger.error("因子衰减检测失败 error=%s", exc)
+
+
+def _build_forward_returns(repository: Repository, as_of_date: str, lookback_days: int) -> pd.DataFrame:
+    end = pd.Timestamp(as_of_date)
+    start = end - pd.Timedelta(days=lookback_days + 20)
+
+    prices = pd.read_sql_query(
+        """
+        SELECT trade_date, code, close
+        FROM prices_daily
+        WHERE trade_date BETWEEN ? AND ?
+        ORDER BY trade_date, code
+        """,
+        repository.connection,
+        params=(start.strftime("%Y-%m-%d"), as_of_date),
+    )
+
+    if prices.empty:
+        return pd.DataFrame()
+
+    prices["next_close"] = prices.groupby("code")["close"].shift(-1)
+    prices["forward_return"] = (prices["next_close"] - prices["close"]) / prices["close"]
+    return prices.dropna(subset=["forward_return"])
+
+
+def _build_factor_history(repository: Repository, as_of_date: str, months: int) -> pd.DataFrame:
+    end = pd.Timestamp(as_of_date)
+    start = end - pd.DateOffset(months=months)
+
+    try:
+        fundamentals = pd.read_sql_query(
+            """
+            SELECT f.trade_date, f.code, f.roe, f.gross_margin, f.operating_cashflow_ratio,
+                   f.pe_ttm, f.pb, f.ps_ttm, f.net_profit_yoy, f.revenue_yoy
+            FROM fundamentals f
+            WHERE f.trade_date BETWEEN ? AND ?
+            ORDER BY f.trade_date, f.code
+            """,
+            repository.connection,
+            params=(start.strftime("%Y-%m-%d"), as_of_date),
+        )
+
+        if fundamentals.empty:
+            return pd.DataFrame()
+
+        from qt.factors.quality import compute_quality_score
+        from qt.factors.value import compute_value_score
+        from qt.factors.expectation import compute_expectation_score
+
+        fundamentals["quality_score"] = compute_quality_score(fundamentals)
+        fundamentals["value_score"] = compute_value_score(fundamentals)
+        fundamentals["expectation_score"] = compute_expectation_score(fundamentals)
+        fundamentals["composite_score"] = (
+            fundamentals["quality_score"] * 0.4
+            + fundamentals["value_score"] * 0.35
+            + fundamentals["expectation_score"] * 0.25
+        )
+
+        return fundamentals
+    except Exception:
+        return pd.DataFrame()
 
 
 if __name__ == "__main__":
