@@ -134,9 +134,16 @@ class BaostockProvider:
     def _load_fundamentals(
         self, codes: list[str], as_of_date: str
     ) -> list[FundamentalSnapshot]:
-        """获取基本面数据: ROE、毛利率、PE、PB 等"""
-        year = as_of_date[:4]
-        quarter = self._date_to_quarter(as_of_date)
+        """获取基本面数据: ROE、毛利率、PE、PB 等
+
+        profit_data 字段: code, pubDate, statDate, roeAvg, npMargin,
+                          gpMargin, netProfit, epsTTM, MBRevenue, ...
+        growth_data 字段:  code, pubDate, statDate, YOYEquity, YOYAsset,
+                          YOYNI, YOYEPSBasic, YOYPNI
+        cashflow 字段:     code, pubDate, statDate, CAToAsset, NCAToAsset, ...,
+                          CFOToNP, ...
+        """
+        year, quarter = self._latest_reported_quarter(as_of_date)
         results = []
         total = len(codes)
 
@@ -148,7 +155,7 @@ class BaostockProvider:
 
                 # 盈利能力
                 rs_profit = bs.query_profit_data(
-                    code=bs_code, year=int(year), quarter=quarter
+                    code=bs_code, year=year, quarter=quarter
                 )
                 profit_data = _query_to_list(rs_profit)
 
@@ -158,20 +165,34 @@ class BaostockProvider:
 
                 if profit_data:
                     row = profit_data[-1]
-                    roe = self._safe_float(row[4])  # roeAvg
-                    gross_margin = self._safe_float(row[3])  # gpMargin
-                    net_profit_yoy = self._safe_float(row[6])  # netProfit yoy
+                    roe = self._safe_float(row[3])  # roeAvg
+                    gross_margin = self._safe_float(row[5])  # gpMargin
+                    # netProfit 是绝对值，不是同比；同比从 growth 取
 
                 # 成长能力
                 rs_growth = bs.query_growth_data(
-                    code=bs_code, year=int(year), quarter=quarter
+                    code=bs_code, year=year, quarter=quarter
                 )
                 growth_data = _query_to_list(rs_growth)
 
                 revenue_yoy = 0.0
                 if growth_data:
                     row = growth_data[-1]
-                    revenue_yoy = self._safe_float(row[3])  # YOYEquity
+                    net_profit_yoy = self._safe_float(row[5])  # YOYNI
+                    revenue_yoy = self._safe_float(row[7])  # YOYPNI
+
+                # 现金流质量
+                cashflow_ratio = 0.0
+                try:
+                    rs_cash = bs.query_cash_flow_data(
+                        code=bs_code, year=year, quarter=quarter
+                    )
+                    cash_data = _query_to_list(rs_cash)
+                    if cash_data:
+                        crow = cash_data[-1]
+                        cashflow_ratio = self._safe_float(crow[8])  # CFOToNP
+                except Exception:
+                    pass
 
                 # 估值 — 从日K线获取
                 pe_ttm, pb, ps_ttm = self._get_valuation(
@@ -183,7 +204,7 @@ class BaostockProvider:
                     code=code,
                     roe=roe,
                     gross_margin=gross_margin,
-                    operating_cashflow_ratio=0.0,
+                    operating_cashflow_ratio=cashflow_ratio,
                     pe_ttm=pe_ttm,
                     pb=pb,
                     ps_ttm=ps_ttm,
@@ -268,15 +289,30 @@ class BaostockProvider:
         return all_prices
 
     @staticmethod
-    def _date_to_quarter(date_str: str) -> int:
+    def _latest_reported_quarter(date_str: str) -> tuple[int, int]:
+        """返回 date_str 时最近已发布的财报 (year, quarter)
+
+        A股财报披露规则:
+        - Q1 (一季报): 最晚 4 月 30 日披露
+        - Q2 (中报):   最晚 8 月 31 日披露
+        - Q3 (三季报): 最晚 10 月 31 日披露
+        - Q4 (年报):   最晚次年 4 月 30 日披露
+        """
+        year = int(date_str[:4])
         month = int(date_str[5:7])
-        if month <= 3:
-            return 1
-        if month <= 6:
-            return 2
-        if month <= 9:
-            return 3
-        return 4
+        if month >= 11:
+            # 11-12月: Q3已披露(截止10月底)，查Q3
+            return year, 3
+        elif month >= 9:
+            # 9-10月: 中报已披露(截止8月底)，查Q2
+            return year, 2
+        elif month >= 5:
+            # 5-8月: 一季报已披露(截止4月底)，查Q1
+            return year, 1
+        else:
+            # 1-4月: 上一年年报尚在披露中，但Q3已确定披露
+            # 安全起见用上年Q3
+            return year - 1, 3
 
     @staticmethod
     def _safe_float(val: str) -> float:
