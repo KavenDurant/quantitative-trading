@@ -1,5 +1,6 @@
 """Factor layer."""
 
+from qt.factors.combiner import build_composite_scores, select_stocks
 from qt.factors.constants import DEFAULT_FACTOR_WEIGHTS, ML_FALLBACK_FACTOR_WEIGHTS
 from qt.factors.decay_detector import (
     DecayReport,
@@ -16,6 +17,8 @@ from qt.factors.ml_composer import (
 )
 
 __all__ = [
+    "build_composite_scores",
+    "select_stocks",
     "DEFAULT_FACTOR_WEIGHTS",
     "ML_FALLBACK_FACTOR_WEIGHTS",
     "DecayReport",
