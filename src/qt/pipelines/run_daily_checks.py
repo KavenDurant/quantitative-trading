@@ -4,6 +4,7 @@ from datetime import date
 from pathlib import Path
 
 import pandas as pd
+from dotenv import load_dotenv
 
 from qt.common.config import load_app_config
 from qt.common.logger import get_logger
@@ -133,6 +134,7 @@ def _log_daily_refresh_summary(connection, today: str) -> None:
 
 def main() -> None:
     project_root = Path(__file__).resolve().parents[3]
+    load_dotenv(project_root / ".env")
     config = load_app_config(project_root)
     client = SQLiteClient(config.db_path)
     client.init_db()

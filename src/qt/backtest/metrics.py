@@ -46,10 +46,35 @@ def compute_monthly_win_rate(monthly_returns: pd.Series) -> float:
     return float(wins / len(monthly_returns))
 
 
-def compute_monthly_returns(nav_series: pd.Series) -> pd.Series:
+def compute_monthly_returns(nav_series: pd.Series, calendar_month: bool = False) -> pd.Series:
+    """计算收益率序列。
+
+    默认保持原有行为：对输入序列做逐期 pct_change。
+    当 calendar_month=True 时，要求输入带日期索引，并按月末净值重采样后计算月度收益率。
+    """
     if len(nav_series) < 2:
         return pd.Series(dtype=float)
-    return nav_series.pct_change().dropna()
+
+    if not calendar_month:
+        return nav_series.pct_change().dropna()
+
+    if isinstance(nav_series.index, pd.DatetimeIndex):
+        dated_nav = nav_series.copy()
+    else:
+        try:
+            dated_index = pd.to_datetime(nav_series.index)
+        except (ValueError, TypeError):
+            return pd.Series(dtype=float)
+        if dated_index.isna().any():
+            return pd.Series(dtype=float)
+        dated_nav = nav_series.copy()
+        dated_nav.index = dated_index
+
+    monthly_nav = dated_nav.sort_index().resample("ME").last().dropna()
+    if len(monthly_nav) < 2:
+        return pd.Series(dtype=float)
+
+    return monthly_nav.pct_change().dropna()
 
 
 def compute_benchmark_comparison(

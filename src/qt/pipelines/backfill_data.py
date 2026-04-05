@@ -1,11 +1,13 @@
 """回填历史数据 — 使用真实数据源填充数据库
 
-支持 baostock（推荐）和 akshare 两种数据源。
+支持 gm（推荐）、baostock 和 akshare 三种数据源。
 用法: PYTHONPATH=src python -m qt.pipelines.backfill_data
 """
 from __future__ import annotations
 
 from pathlib import Path
+
+from dotenv import load_dotenv
 
 from qt.common.config import load_app_config
 from qt.common.logger import get_logger
@@ -91,6 +93,36 @@ def _build_earnings_surprises_from_fundamentals(
     return rows
 
 
+def _load_valuation_with_available_provider(
+    provider,
+    fallback_provider_name: str,
+    codes: list[str],
+    as_of_date: str,
+):
+    if not codes:
+        return []
+
+    if hasattr(provider, "load_valuation"):
+        try:
+            return provider.load_valuation(codes, as_of_date)
+        except Exception as exc:
+            logger.warning("主数据源估值拉取失败 provider=%s error=%s", provider.__class__.__name__, exc)
+
+    if fallback_provider_name:
+        fallback_provider = get_provider(fallback_provider_name)
+        if hasattr(fallback_provider, "load_valuation"):
+            try:
+                return fallback_provider.load_valuation(codes, as_of_date)
+            except Exception as exc:
+                logger.warning(
+                    "回退数据源估值拉取失败 provider=%s error=%s",
+                    fallback_provider.__class__.__name__,
+                    exc,
+                )
+
+    return []
+
+
 def _load_analyst_expectations_with_available_provider(
     provider,
     fallback_provider_name: str,
@@ -131,6 +163,7 @@ def _load_analyst_expectations_with_available_provider(
 
 def main() -> None:
     project_root = Path(__file__).resolve().parents[3]
+    load_dotenv(project_root / ".env")
     config = load_app_config(project_root)
     client = SQLiteClient(config.db_path)
     client.init_db()

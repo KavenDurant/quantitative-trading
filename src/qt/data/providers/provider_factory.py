@@ -14,6 +14,18 @@ class MockProvider:
 
 
 def get_provider(name: str):
+    if name == "gm":
+        try:
+            from qt.data.providers.gm_provider import GmProvider
+            return GmProvider()
+        except ImportError:
+            import warnings
+            warnings.warn(
+                "gm provider not available (requires 'goldminer' extra). "
+                "Falling back to baostock.",
+                RuntimeWarning,
+            )
+            return BaostockProvider()
     if name == "akshare":
         return AkshareProvider()
     if name == "baostock":
@@ -22,7 +34,14 @@ def get_provider(name: str):
 
 
 def get_best_available_provider():
-    """自动选择最佳可用数据源: baostock > akshare > mock"""
+    """自动选择最佳可用数据源: gm > baostock > akshare > mock"""
+    try:
+        import os
+        if os.environ.get("GM_API_TOKEN"):
+            from qt.data.providers.gm_provider import GmProvider
+            return GmProvider()
+    except ImportError:
+        pass
     try:
         import baostock
         return BaostockProvider()

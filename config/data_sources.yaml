@@ -1,8 +1,9 @@
 data_sources:
   primary: baostock
-  fallback: mock
+  fallback: akshare
   supported:
     - mock
+    - gm
     - akshare
     - baostock
   api:

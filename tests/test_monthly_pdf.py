@@ -35,6 +35,8 @@ def test_compute_monthly_metrics():
     assert metrics.end_nav == 10100.0
     assert metrics.total_return == 0.01
     assert metrics.max_drawdown <= 0
+    assert round(metrics.sharpe_ratio, 4) != 0.0
+    assert round(metrics.monthly_win_rate, 4) == 0.5
     print("PASS: compute_monthly_metrics")
 
 
